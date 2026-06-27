@@ -2,11 +2,22 @@ const express = require('express');
 const app = express();
 const port = process.env.PORT || 3000;
 
-// متغيرات النظام
-let hasOrder = false;
-let availableTables = 12; // يمكنك تعديل هذا الرقم ليمثل عدد الطاولات المتوفرة بالمطعم
+// إعداد السيرفر لقراءة البيانات المرسلة من لوحة التحكم
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-// مسار الـ ESP32
+// متغيرات النظام المركزية (تتغير ديناميكياً من لوحة الإدارة)
+let systemConfig = {
+    restaurantName: "مطاعم أبو يونس",
+    bgImage: "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=800&q=80",
+    themeColor: "#1e4620", // اللون الأخضر الخنّاني الفخم الافتراضي
+    availableTables: 12
+};
+
+let hasOrder = false;
+let ordersList = []; // مصفوفة لتخزين الطلبات الحية وعرضها للمدير
+
+// 1. مسار الـ ESP32 الخاص بالمطبخ لفحص الإشارة
 app.get('/update', (req, res) => {
     if (hasOrder) {
         res.send('order=1');
@@ -16,13 +27,96 @@ app.get('/update', (req, res) => {
     }
 });
 
-// مسار تفعيل الطلب
-app.get('/trigger-order', (req, res) => {
-    hasOrder = true;
-    res.status(200).send('OK');
+// 2. مسار استقبال الطلب وحفظه في النظام وتفعيل الـ ESP32
+app.post('/api/submit-order', (req, res) => {
+    const { table, items, notes, total } = req.body;
+    
+    // إضافة الطلب إلى قائمة الإدارة
+    ordersList.unshift({
+        id: ordersList.length + 1,
+        table,
+        items,
+        notes,
+        total,
+        time: new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })
+    });
+
+    hasOrder = true; // تفعيل جرس المطبخ
+    res.json({ success: true });
 });
 
-// صفحة المطعم الفخمة بالكامل
+// 3. مسار لوحة تحكم الإدارة السرية (لتحديث الإعدادات ورؤية الطلبات)
+app.get('/admin', (req, res) => {
+    res.send(`
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>لوحة إدارة مطاعم أبو يونس</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; margin: 20px; color: #333; }
+        .admin-container { max-width: 800px; margin: auto; background: white; padding: 25px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
+        h2, h3 { color: ${systemConfig.themeColor}; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+        .form-group { margin-bottom: 15px; text-align: right; }
+        label { display: block; font-weight: bold; margin-bottom: 5px; }
+        input[type="text"], input[type="number"], input[type="color"] { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; }
+        input[type="color"] { height: 45px; padding: 2px; cursor: pointer; }
+        button { background: ${systemConfig.themeColor}; color: white; border: none; padding: 12px 20px; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%; font-size: 16px; }
+        .order-card { background: #f9f9f9; padding: 15px; border-right: 5px solid ${systemConfig.themeColor}; margin-bottom: 10px; border-radius: 4px; }
+    </style>
+</head>
+<body>
+<div class="admin-container">
+    <h2>⚙️ لوحة التحكم والإدارة الفخمة</h2>
+    <form action="/admin/update-settings" method="POST">
+        <div class="form-group">
+            <label>اسم المطعم:</label>
+            <input type="text" name="restaurantName" value="${systemConfig.restaurantName}">
+        </div>
+        <div class="form-group">
+            <label>رابط صورة الخلفية (الهيدر):</label>
+            <input type="text" name="bgImage" value="${systemConfig.bgImage}">
+        </div>
+        <div class="form-group">
+            <label>لون الهوية والمطعم (حالياً أخضر خنّاني):</label>
+            <input type="color" name="themeColor" value="${systemConfig.themeColor}">
+        </div>
+        <div class="form-group">
+            <label>عدد الطاولات المتوفرة بالنظام:</label>
+            <input type="number" name="availableTables" value="${systemConfig.availableTables}">
+        </div>
+        <button type="submit">حفظ وتطبيق الإعدادات فوراً 💾</button>
+    </form>
+
+    <h3>📥 الطلبات الحية الحالية (${ordersList.length})</h3>
+    <div id="ordersContainer">
+        ${ordersList.map(o => `
+            <div class="order-card">
+                <b>طاولة رقم: ${o.table}</b> <span style="float:left; color:#7f8c8d;">${o.time}</span><br>
+                <small>الطلبات: ${o.items}</small><br>
+                <small>الملاحظات: ${o.notes || 'لا يوجد'}</small><br>
+                <span style="color:${systemConfig.themeColor}; font-weight:bold;">الإجمالي: ${o.total} دينار</span>
+            </div>
+        `).join('')}
+    </div>
+</div>
+</body>
+</html>
+    `);
+});
+
+// مسار استقبال تحديثات الإعدادات من المدير
+app.post('/admin/update-settings', (req, res) => {
+    const { restaurantName, bgImage, themeColor, availableTables } = req.body;
+    systemConfig.restaurantName = restaurantName;
+    systemConfig.bgImage = bgImage;
+    systemConfig.themeColor = themeColor;
+    systemConfig.availableTables = parseInt(availableTables) || 12;
+    res.redirect('/admin'); // إعادة توجيه لصفحة المدير بعد الحفظ
+});
+
+// 4. صفحة المنيو الرئيسية للزبائن (متناسقة ديناميكياً مع اختيارات المدير)
 app.get('/', (req, res) => {
     res.send(`
 <!DOCTYPE html>
@@ -30,12 +124,12 @@ app.get('/', (req, res) => {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>مطاعم أبو يونس</title>
+    <title>${systemConfig.restaurantName}</title>
     <style>
-        :root { --primary-color: #e74c3c; --bg-light: #f4f6f8; --dark-blue: #2c3e50; }
+        :root { --primary-color: ${systemConfig.themeColor}; --bg-light: #f4f6f8; --dark-blue: #2c3e50; }
         body { font-family: 'Segoe UI', sans-serif; background-color: var(--bg-light); margin: 0; padding-bottom: 80px; }
         .page-wrapper { max-width: 500px; margin: auto; background: white; min-height: 100vh; box-shadow: 0 0 10px rgba(0,0,0,0.1); position: relative; }
-        .header { position: relative; height: 180px; background: linear-gradient(rgba(0,0,0,0.4), rgba(0,0,0,0.4)), url('https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=800&q=80'); background-size: cover; background-position: center; display: flex; justify-content: center; align-items: center; color: white; }
+        .header { position: relative; height: 180px; background: linear-gradient(rgba(0,0,0,0.4), rgba(0,0,0,0.4)), url('${systemConfig.bgImage}'); background-size: cover; background-position: center; display: flex; justify-content: center; align-items: center; color: white; }
         .header h1 { font-size: 28px; text-shadow: 2px 2px 4px rgba(0,0,0,0.6); margin: 0; }
         .filter-bar { display: flex; gap: 10px; padding: 15px; overflow-x: auto; background: white; border-bottom: 1px solid #eee; }
         .filter-btn { padding: 8px 15px; border-radius: 20px; border: 1px solid var(--primary-color); background: white; color: var(--primary-color); white-space: nowrap; font-weight: bold; }
@@ -43,48 +137,45 @@ app.get('/', (req, res) => {
         .menu-container { padding: 15px; }
         .meal-card { display: flex; align-items: center; background: #fff; border-bottom: 1px solid #eee; padding: 15px 0; }
         .meal-img { width: 80px; height: 80px; border-radius: 12px; object-fit: cover; margin-left: 15px; }
-        .floating-cart { position: fixed; bottom: 25px; right: 25px; background: var(--primary-color); color: white; width: 60px; height: 60px; border-radius: 50%; display: flex; justify-content: center; align-items: center; cursor: pointer; box-shadow: 0 5px 15px rgba(231, 76, 60, 0.4); z-index: 100; }
+        .floating-cart { position: fixed; bottom: 25px; right: 25px; background: var(--primary-color); color: white; width: 60px; height: 60px; border-radius: 50%; display: flex; justify-content: center; align-items: center; cursor: pointer; box-shadow: 0 5px 15px rgba(0,0,0,0.2); z-index: 100; }
         #cartCount { position: absolute; top: -5px; right: -5px; background: var(--dark-blue); color: white; font-size: 12px; width: 22px; height: 22px; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-weight: bold; }
         
-        /* السلة والنافذة */
         .modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; justify-content: center; align-items: flex-end; z-index: 1000; }
         .modal-content { background: white; width: 100%; max-width: 500px; border-top-left-radius: 20px; border-top-right-radius: 20px; padding: 20px; max-height: 80vh; overflow-y: auto; box-sizing: border-box; }
         button { cursor: pointer; border: none; padding: 8px 12px; border-radius: 5px; }
 
-        /* ستايل قائمة اختيار الطاولة الدوارة المدمجة */
         .table-selector-wrapper { margin: 15px 0; text-align: right; }
         .table-selector-wrapper label { font-weight: bold; color: var(--dark-blue); display: block; margin-bottom: 8px; }
         .table-select { width: 100%; padding: 12px; border-radius: 10px; border: 2px solid #ddd; font-size: 16px; font-weight: bold; color: var(--dark-blue); background: #f9f9f9; outline: none; }
         
-        /* نافذة النجاح الفخمة البديلة للـ alert */
+        /* واجهة النجاح المخصصة باللون الأخضر الخنّاني الملكي */
         .success-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: none; justify-content: center; align-items: center; z-index: 2000; animation: fadeIn 0.3s ease; }
-        .success-card { background: white; width: 85%; max-width: 380px; border-radius: 25px; padding: 30px 20px; text-align: center; box-shadow: 0 15px 30px rgba(0,0,0,0.3); transform: scale(0.7); transition: transform 0.3s ease; }
+        .success-card { background: var(--primary-color); width: 85%; max-width: 380px; border-radius: 25px; padding: 30px 20px; text-align: center; box-shadow: 0 15px 30px rgba(0,0,0,0.3); transform: scale(0.7); transition: transform 0.3s ease; color: white; }
         .success-overlay.show { display: flex; }
         .success-overlay.show .success-card { transform: scale(1); }
-        .success-icon { width: 70px; height: 70px; background: #2ecc71; color: white; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-size: 35px; margin: 0 auto 20px; box-shadow: 0 5px 15px rgba(46,204,113,0.4); }
-        .success-title { font-size: 22px; font-weight: bold; color: #2c3e50; margin-bottom: 10px; }
-        .success-msg { font-size: 15px; color: #7f8c8d; margin-bottom: 20px; line-height: 1.5; }
-        .success-thanks { font-size: 12.5px; color: #95a5a6; border-top: 1px dashed #ddd; padding-top: 15px; font-style: italic; font-weight: 500; }
-        .close-success-btn { background: var(--dark-blue); color: white; border-radius: 10px; padding: 12px 25px; font-weight: bold; font-size: 15px; margin-top: 15px; width: 100%; }
+        .success-icon { width: 70px; height: 70px; background: white; color: var(--primary-color); border-radius: 50%; display: flex; justify-content: center; align-items: center; font-size: 35px; margin: 0 auto 20px; font-weight: bold; }
+        .success-title { font-size: 24px; font-weight: bold; margin-bottom: 12px; }
+        .success-msg { font-size: 16px; margin-bottom: 25px; line-height: 1.5; opacity: 0.95; }
+        .success-thanks { font-size: 13px; border-top: 1px dashed rgba(255,255,255,0.4); padding-top: 15px; font-style: italic; opacity: 0.85; }
+        .close-success-btn { background: white; color: var(--primary-color); border-radius: 10px; padding: 12px 25px; font-weight: bold; font-size: 16px; margin-top: 20px; width: 100%; }
 
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
     </style>
 </head>
 <body>
 
-<!-- واجهة النجاح المخصصة -->
 <div id="successModal" class="success-overlay">
     <div class="success-card">
         <div class="success-icon">✓</div>
         <div class="success-title">تم الطلب بنجاح</div>
-        <div id="successDetails" class="success-msg">جاري تجهيز طلبك وإرساله للمطبخ فوراً..</div>
+        <div id="successDetails" class="success-msg"></div>
         <div class="success-thanks">شكراً لاختياركم مطاعم أبو يونس، وصحتين وعافية على قلبكم! ✨</div>
         <button class="close-success-btn" onclick="closeSuccessModal()">رائع</button>
     </div>
 </div>
 
 <div class="page-wrapper">
-    <header class="header"><h1>مطاعم أبو يونس</h1></header>
+    <header class="header"><h1>${systemConfig.restaurantName}</h1></header>
     <div class="filter-bar" id="filterBar">
         <button class="filter-btn active" onclick="filterMenu('الكل', this)">الكل</button>
         <button class="filter-btn" onclick="filterMenu('شاورما', this)">شاورما</button>
@@ -102,7 +193,6 @@ app.get('/', (req, res) => {
         <div style="font-weight:bold; margin-bottom:15px; font-size: 18px; color: var(--dark-blue);">سلة الطلبات <span onclick="closeCartModal()" style="float:left; cursor:pointer; color: #aaa;">✕</span></div>
         <div id="cartItemsList"></div>
         
-        <!-- إضافة ميزة عجلة اختيار رقم الطاولة المعتمدة على السيرفر -->
         <div class="table-selector-wrapper">
             <label for="tableNumberSelect">الرجاء اختيار رقم الطاولة:</label>
             <select id="tableNumberSelect" class="table-select"></select>
@@ -112,12 +202,12 @@ app.get('/', (req, res) => {
             الإجمالي: <span id="cartTotal">0.00</span> دينار
         </div>
         <textarea id="orderNotes" style="width:100%; padding:10px; border-radius:8px; border:1px solid #ddd; box-sizing: border-box;" placeholder="ملاحظات.."></textarea>
-        <button onclick="submitOrder()" style="width:100%; padding:15px; background:#2ecc71; color:white; border-radius:8px; margin-top:15px; font-weight:bold; font-size: 16px; box-shadow: 0 4px 10px rgba(46,204,113,0.3);">تأكيد الطلب 📲</button>
+        <button onclick="submitOrder()" style="width:100%; padding:15px; background:var(--primary-color); color:white; border-radius:8px; margin-top:15px; font-weight:bold; font-size: 16px;">تأكيد الطلب 📲</button>
     </div>
 </div>
 
 <script>
-    const maxTables = ${availableTables}; // يقرأ العدد مباشرة من السيرفر
+    const maxTables = ${systemConfig.availableTables};
 
     const mealsData = [
         { id: 1, name: "شاورما دجاج", price: 3.50, category: "شاورما", img: "https://images.unsplash.com/photo-1649144368140-5e3692beeb51?w=200" },
@@ -127,7 +217,6 @@ app.get('/', (req, res) => {
     let cart = {};
     let currentCategory = 'الكل';
 
-    // تعبئة قائمة الطاولات ديناميكياً
     const tableSelect = document.getElementById('tableNumberSelect');
     for(let i = 1; i <= maxTables; i++) {
         let opt = document.createElement('option');
@@ -148,7 +237,7 @@ app.get('/', (req, res) => {
                 <div style="display:flex; align-items:center; gap:8px; margin-left: 10px;">
                     <button onclick="changeQty(\${m.id}, -1)" style="background:#eee; font-weight:bold; width:30px; height:30px; border-radius:50%;">-</button>
                     <span style="font-weight:bold; width:20px; text-align:center;">\${cart[m.id] || 0}</span>
-                    <button onclick="changeQty(\${m.id}, 1)" style="background:#2ecc71; color:white; font-weight:bold; width:30px; height:30px; border-radius:50%;">+</button>
+                    <button onclick="changeQty(\${m.id}, 1)" style="background:var(--primary-color); color:white; font-weight:bold; width:30px; height:30px; border-radius:50%;">+</button>
                 </div>
             </div>\`).join('');
     }
@@ -179,29 +268,39 @@ app.get('/', (req, res) => {
     function closeCartModal() { document.getElementById('cartModal').style.display = 'none'; }
     
     function submitOrder() { 
-        if(Object.keys(cart).length === 0) {
-            alert('السلة فارغة!');
-            return;
-        }
+        if(Object.keys(cart).length === 0) return;
         const chosenTable = document.getElementById('tableNumberSelect').value;
+        const notes = document.getElementById('orderNotes').value;
         
-        fetch('/trigger-order'); 
+        let itemsSummary = Object.keys(cart).map(id => {
+            let m = mealsData.find(x => x.id == id);
+            return m.name + " (" + cart[id] + ")";
+        }).join(', ');
+
+        // إرسال الطلب للسيرفر لتخزينه في قائمة المدير وتشغيل الجرس
+        fetch('/api/submit-order', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                table: chosenTable,
+                items: itemsSummary,
+                notes: notes,
+                total: document.getElementById('cartTotal').innerText
+            })
+        });
         
-        // تعديل محتوى نافذة النجاح ليوضح رقم الطاولة المختار
-        document.getElementById('successDetails').innerText = "تم إرسال طلبك الخاص بـ (طاولة رقم " + chosenTable + ") وجاري إرسال الإشارة للمطبخ لتجهيزه فوراً!";
+        // تعديل محتوى واجهة النجاح حسب طلبك الدقيق
+        document.getElementById('successDetails').innerText = "تم ارسال طلبك الخاص بطاولة رقم (" + chosenTable + ")";
         
         closeCartModal();
-        // إظهار نافذة النجاح الكرتونية الاحترافية بدلاً من الـ alert
         document.getElementById('successModal').classList.add('show');
         
         cart={}; 
+        document.getElementById('orderNotes').value = "";
         updateUI(); 
     }
 
-    function closeSuccessModal() {
-        document.getElementById('successModal').classList.remove('show');
-    }
-    
+    function closeSuccessModal() { document.getElementById('successModal').classList.remove('show'); }
     renderMenu();
 </script>
 </body>
