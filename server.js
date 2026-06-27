@@ -1,10 +1,15 @@
 const express = require('express');
 const app = express();
-app.use(express.json());
-let pendingOrders = [];
-app.post('/order', (req, res) => { pendingOrders.push(req.body); res.status(200).send("OK"); });
-app.get('/get-order', (req, res) => {
-    if (pendingOrders.length > 0) res.json(pendingOrders.shift());
-    else res.status(204).send();
+const port = process.env.PORT || 3000;
+
+app.get('/update', (req, res) => {
+  res.send('order=1');
 });
-app.listen(process.env.PORT || 3000);
+
+app.get('/', (req, res) => {
+  res.send('Server is working!');
+});
+
+app.listen(port, () => {
+  console.log(`Server running on port ${port}`);
+});
