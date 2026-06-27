@@ -3,16 +3,14 @@ const app = express();
 const cors = require('cors'); 
 const port = process.env.PORT || 3000;
 
-// تفعيل استقبال البيانات بأحجام كبيرة لرفع الصور من المعرض
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// الإعدادات المركزية الافتراضية - المحافظة على الهوية الفخمة للمطعم
 let systemConfig = {
     restaurantName: "مطاعم أبو يونس",
     bgImage: "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=800&q=80",
-    themeColor: "#1e4620", // الأخضر الخنّاني الملكي المعتمد
+    themeColor: "#1e4620", 
     availableTables: 12
 };
 
@@ -26,9 +24,7 @@ let mealsData = [
 let hasOrder = false;
 let ordersList = [];
 
-// ==================== مسارات الـ ESP32 والـ API للمطبخ والإدارة ====================
-
-// جرس الـ ESP32 الخاص بنظام QMC لطلب المطبخ
+// جرس الـ ESP32
 app.get('/update', (req, res) => {
     if (hasOrder) { 
         res.send('order=1'); 
@@ -38,40 +34,32 @@ app.get('/update', (req, res) => {
     }
 });
 
-// إرسال البيانات الحية للوحة التحكم المستقلة
 app.get('/api/get-system', (req, res) => {
     res.json({ systemConfig, categories, mealsData, ordersList });
 });
 
-// استقبال تحديثات المظهر والألوان من الإدارة عن بعد
 app.post('/api/update-config', (req, res) => {
     systemConfig = req.body;
     res.json({ success: true });
 });
 
-// استقبال تحديثات وجبات المنيو (إضافة/حذف) من الإدارة عن بعد
 app.post('/api/update-meals', (req, res) => {
     mealsData = req.body.mealsData;
     res.json({ success: true });
 });
 
-// استقبال الطلبات الجديدة الحية من الزبائن عند الطاولات
 app.post('/api/submit-order', (req, res) => {
     const { table, items, notes, total, rawItems } = req.body;
     ordersList.unshift({
         id: ordersList.length + 1,
-        table,
-        items,
-        rawItems,
-        notes,
+        table, items, rawItems, notes,
         total: parseFloat(total) || 0,
         time: new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })
     });
-    hasOrder = true; // تفعيل جرس القطعة الكهربائية فوراً
+    hasOrder = true; 
     res.json({ success: true });
 });
 
-// ==================== واجهة الزبائن الفخمة بالكامل المعتمدة سابقاً ====================
 app.get('/', (req, res) => {
     res.send(`
 <!DOCTYPE html>
@@ -79,10 +67,10 @@ app.get('/', (req, res) => {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>${systemConfig.restaurantName}</title>
+    <title>\${systemConfig.restaurantName}</title>
     <style>
         :root { 
-            --primary-color: ${systemConfig.themeColor}; 
+            --primary-color: \${systemConfig.themeColor}; 
             --bg-light: #f4f6f8; 
             --dark-blue: #2c3e50; 
         }
@@ -103,7 +91,7 @@ app.get('/', (req, res) => {
         .header { 
             position: relative; 
             height: 180px; 
-            background: linear-gradient(rgba(0,0,0,0.4), rgba(0,0,0,0.4)), url('${systemConfig.bgImage}'); 
+            background: linear-gradient(rgba(0,0,0,0.4), rgba(0,0,0,0.4)), url('\${systemConfig.bgImage}'); 
             background-size: cover; 
             background-position: center; 
             display: flex; 
@@ -197,278 +185,4 @@ app.get('/', (req, res) => {
             color: #333; 
         }
         .floating-cart { 
-            position: fixed; 
-            bottom: 25px; 
-            right: 25px; 
-            background: var(--primary-color); 
-            color: white; 
-            width: 60px; 
-            height: 60px; 
-            border-radius: 50%; 
-            display: flex; 
-            justify-content: center; 
-            align-items: center; 
-            cursor: pointer; 
-            box-shadow: 0 5px 15px rgba(0,0,0,0.15); 
-            z-index: 100; 
-        }
-        #cartCount { 
-            position: absolute; 
-            top: -5px; 
-            right: -5px; 
-            background: var(--dark-blue); 
-            color: white; 
-            font-size: 12px; 
-            width: 22px; 
-            height: 22px; 
-            border-radius: 50%; 
-            display: flex; 
-            justify-content: center; 
-            align-items: center; 
-            font-weight: bold; 
-        }
-        .modal { 
-            position: fixed; 
-            top: 0; 
-            left: 0; 
-            width: 100%; 
-            height: 100%; 
-            background: rgba(0,0,0,0.5); 
-            display: none; 
-            justify-content: center; 
-            align-items: flex-end; 
-            z-index: 1000; 
-        }
-        .modal-content { 
-            background: white; 
-            width: 100%; 
-            max-width: 500px; 
-            border-top-left-radius: 20px; 
-            border-top-right-radius: 20px; 
-            padding: 20px; 
-            max-height: 80vh; 
-            overflow-y: auto; 
-            box-sizing: border-box; 
-        }
-        .table-selector-wrapper { 
-            margin: 15px 0; 
-            text-align: right; 
-        }
-        .table-selector-wrapper label { 
-            font-weight: bold; 
-            color: var(--dark-blue); 
-            display: block; 
-            margin-bottom: 8px; 
-        }
-        .table-select { 
-            width: 100%; 
-            padding: 12px; 
-            border-radius: 10px; 
-            border: 2px solid #ddd; 
-            font-size: 16px; 
-            font-weight: bold; 
-            color: var(--dark-blue); 
-            background: #f9f9f9; 
-            outline: none; 
-        }
-        .success-overlay { 
-            position: fixed; 
-            top: 0; 
-            left: 0; 
-            width: 100%; 
-            height: 100%; 
-            background: rgba(0,0,0,0.6); 
-            display: none; 
-            justify-content: center; 
-            align-items: center; 
-            z-index: 2000; 
-        }
-        .success-card { 
-            background: var(--primary-color); 
-            width: 85%; 
-            max-width: 380px; 
-            border-radius: 25px; 
-            padding: 30px 20px; 
-            text-align: center; 
-            color: white; 
-        }
-        .success-overlay.show { 
-            display: flex; 
-        }
-        .success-icon { 
-            width: 70px; 
-            height: 70px; 
-            background: white; 
-            color: var(--primary-color); 
-            border-radius: 50%; 
-            display: flex; 
-            justify-content: center; 
-            align-items: center; 
-            font-size: 35px; 
-            margin: 0 auto 20px; 
-            font-weight: bold; 
-        }
-        .close-success-btn { 
-            background: white; 
-            color: var(--primary-color); 
-            border-radius: 10px; 
-            padding: 12px 25px; 
-            font-weight: bold; 
-            font-size: 16px; 
-            margin-top: 20px; 
-            width: 100%; 
-            border: none;
-            cursor: pointer;
-        }
-    </style>
-</head>
-<body>
-
-<div id="successModal" class="success-overlay">
-    <div class="success-card">
-        <div class="success-icon">✓</div>
-        <div style="font-size:24px; font-weight:bold; margin-bottom:12px;">تم الطلب بنجاح</div>
-        <div id="successDetails" style="font-size:16px; margin-bottom:25px;"></div>
-        <div style="font-size:13px; border-top:1px dashed rgba(255,255,255,0.4); padding-top:15px; font-style:italic;">شكراً لاختياركم مطاعم أبو يونس، وصحتين وعافية! ✨</div>
-        <button class="close-success-btn" onclick="closeSuccessModal()">رائع</button>
-    </div>
-</div>
-
-<div class="page-wrapper">
-    <header class="header"><h1>${systemConfig.restaurantName}</h1></header>
-    
-    <div class="filter-bar" id="filterBar">
-        <button class="filter-btn active" onclick="filterMenu('الكل', this)">الكل</button>
-        ${categories.filter(c => c !== "الكل").map(c => `<button class="filter-btn" onclick="filterMenu('${c}', this)">${c}</button>`).join('')}
-    </div>
-    
-    <div id="menuItemsContainer" class="menu-container"></div>
-    
-    <div class="floating-cart" onclick="openCartModal()">
-        <span id="cartCount">0</span>🛒
-    </div>
-</div>
-
-<div class="modal" id="cartModal">
-    <div class="modal-content">
-        <div style="font-weight:bold; margin-bottom:15px; font-size:18px;">سلة الطلبات <span onclick="closeCartModal()" style="float:left; cursor:pointer; color:#aaa;">✕</span></div>
-        <div id="cartItemsList"></div>
-        <div class="table-selector-wrapper">
-            <label>رقم الطاولة:</label>
-            <select id="tableNumberSelect" class="table-select"></select>
-        </div>
-        <div style="border-top:2px solid #eee; margin:15px 0; padding-top:10px; font-weight:bold; font-size:18px;">الإجمالي: <span id="cartTotal">0.00</span> دينار</div>
-        <textarea id="orderNotes" style="width:100%; padding:10px; border-radius:8px; border:1px solid #ddd; box-sizing: border-box;" placeholder="أي ملاحظات على الطلب؟ (مثال: بدون بصل، زيادة ثوم..)"></textarea>
-        <button onclick="submitOrder()" style="width:100%; padding:15px; background:var(--primary-color); color:white; border-radius:8px; margin-top:15px; font-weight:bold; border:none; cursor:pointer;">تأكيد الطلب 📲</button>
-    </div>
-</div>
-
-<script>
-    const maxTables = ${systemConfig.availableTables};
-    const mealsData = ${JSON.stringify(mealsData)};
-    let cart = {}; 
-    let currentCategory = 'الكل';
-    
-    // تعبئة قائمة اختيار الطاولات ديناميكياً بناءً على العدد المحدد في لوحة التحكم
-    const tableSelect = document.getElementById('tableNumberSelect');
-    for(let i = 1; i <= maxTables; i++) {
-        let opt = document.createElement('option'); 
-        opt.value = i; 
-        opt.innerText = "طاولة رقم " + i; 
-        tableSelect.appendChild(opt);
-    }
-    
-    function filterMenu(cat, btn) { 
-        currentCategory = cat; 
-        document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active')); 
-        btn.classList.add('active'); 
-        renderMenu(); 
-    }
-    
-    function renderMenu() {
-        const container = document.getElementById('menuItemsContainer');
-        const filtered = currentCategory === 'الكل' ? mealsData : mealsData.filter(m => m.category === currentCategory);
-        container.innerHTML = filtered.map(m => `
-            <div class="meal-card">
-                <img src="\${m.img}" class="meal-img">
-                <div class="meal-name">\${m.name}</div>
-                <div class="meal-desc">\${m.description}</div>
-                <div class="meal-price">\${m.price.toFixed(2)} دينار</div>
-                <div class="qty-controls">
-                    <button onclick="changeQty(\${m.id}, -1)" class="qty-btn minus">-</button>
-                    <span style="font-weight:bold; width: 20px; text-align:center;">\${cart[m.id] || 0}</span>
-                    <button onclick="changeQty(\${m.id}, 1)" class="qty-btn">+</button>
-                </div>
-            </div>`).join('');
-    }
-    
-    function changeQty(id, val) { 
-        cart[id] = (cart[id] || 0) + val; 
-        if(cart[id] <= 0) delete cart[id]; 
-        updateUI(); 
-    }
-    
-    function updateUI() {
-        let count = 0, total = 0; 
-        for(let id in cart) { 
-            let m = mealsData.find(x => x.id == id); 
-            count += cart[id]; 
-            total += m.price * cart[id]; 
-        }
-        document.getElementById('cartCount').innerText = count; 
-        document.getElementById('cartTotal').innerText = total.toFixed(2); 
-        renderMenu();
-    }
-    
-    function openCartModal() {
-        document.getElementById('cartModal').style.display = 'flex';
-        let list = document.getElementById('cartItemsList'); 
-        list.innerHTML = Object.keys(cart).length === 0 ? "السلة فارغة، أضف بعض الوجبات الشهية أولاً!" : "";
-        for(let id in cart) { 
-            let m = mealsData.find(x => x.id == id); 
-            list.innerHTML += `<div style="padding:8px 0; border-bottom:1px solid #f9f9f9;">• \${m.name} (x\${cart[id]}) - \${(m.price * cart[id]).toFixed(2)} دينار</div>`; 
-        }
-    }
-    
-    function closeCartModal() { 
-        document.getElementById('cartModal').style.display = 'none'; 
-    }
-    
-    function submitOrder() {
-        if(Object.keys(cart).length === 0) return;
-        const chosenTable = document.getElementById('tableNumberSelect').value;
-        const notes = document.getElementById('orderNotes').value;
-        let itemsSummary = Object.keys(cart).map(id => mealsData.find(x => x.id == id).name + " (" + cart[id] + ")").join(', ');
-        
-        fetch('/api/submit-order', {
-            method: 'POST', 
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                table: chosenTable, 
-                items: itemsSummary, 
-                rawItems: cart, 
-                notes: notes, 
-                total: document.getElementById('cartTotal').innerText 
-            })
-        }).then(() => {
-            document.getElementById('successDetails').innerText = "تم إرسال طلبك الخاص بطاولة رقم (" + chosenTable + ") للمطبخ بنجاح.";
-            closeCartModal(); 
-            document.getElementById('successModal').classList.add('show'); 
-            cart={}; 
-            document.getElementById('orderNotes').value = "";
-            updateUI();
-        });
-    }
-    
-    function closeSuccessModal() { 
-        document.getElementById('successModal').classList.remove('show'); 
-    }
-    
-    renderMenu();
-</script>
-</body>
-</html>
-    `);
-});
-
-app.listen(port, () => console.log(`Client Server running securely on port ${port}`));
+            position: fixed;
