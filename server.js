@@ -1,23 +1,22 @@
 const express = require('express');
 const app = express();
 const cors = require('cors');
-const fetch = require('node-fetch'); // تأكد من تثبيت هذه المكتبة: npm install node-fetch
+const fetch = require('node-fetch');
 const port = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// رابط سيرفر الإدارة الذي ستحصل عليه بعد رفع السيرفر الآخر على Render
+// --- هنا ضع رابط سيرفر الإدارة بعد أن ترفعه على Render ---
 const DASHBOARD_URL = "https://qmc-admin-panel.onrender.com"; 
 
-// متغيرات النظام المبدئية
-let systemConfig = { restaurantName: "جاري التحميل...", bgImage: "", themeColor: "#1e4620", availableTables: 0 };
+let systemConfig = { restaurantName: "مطاعم أبو يونس", bgImage: "https://images.unsplash.com/photo-1555396273-367ea4eb4db5", themeColor: "#1e4620", availableTables: 12 };
 let categories = ["الكل"];
 let mealsData = [];
 let hasOrder = false;
 
-// دالة جلب البيانات من سيرفر الإدارة (مزامنة دورية)
+// دالة لجلب البيانات من سيرفر الإدارة
 async function syncWithDashboard() {
     try {
         const response = await fetch(`${DASHBOARD_URL}/api/public/menu`);
@@ -25,20 +24,18 @@ async function syncWithDashboard() {
         systemConfig = data.systemConfig;
         categories = ["الكل", ...data.categories.map(c => c.name)];
         mealsData = data.mealsData;
-    } catch (e) {
-        console.log("خطأ في الاتصال بسيرفر الإدارة، تأكد من الرابط.");
-    }
+    } catch (e) { console.log("بانتظار سيرفر الإدارة..."); }
 }
-setInterval(syncWithDashboard, 10000); // تحديث كل 10 ثواني
+setInterval(syncWithDashboard, 10000);
 syncWithDashboard();
 
-// الأردوينو لا يزال يعمل هنا
+// كود الأردوينو
 app.get('/update', (req, res) => {
     if (hasOrder) { res.send('order=1'); hasOrder = false; }
     else { res.send('no_order'); }
 });
 
-// إرسال الطلب لسيرفر الإدارة ليحفظه في سجل الجرد هناك
+// إرسال الطلب للإدارة
 app.post('/api/submit-order', async (req, res) => {
     hasOrder = true;
     try {
@@ -48,44 +45,36 @@ app.post('/api/submit-order', async (req, res) => {
             body: JSON.stringify(req.body)
         });
         res.json({ success: true });
-    } catch (e) {
-        res.status(500).json({ success: false, message: "فشل إرسال الطلب للسيرفر الرئيسي" });
-    }
+    } catch (e) { res.status(500).json({ success: false }); }
 });
 
-// صفحة الزبائن الرئيسية
+// واجهة الزبائن
 app.get('/', (req, res) => {
     res.send(`
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>${systemConfig.restaurantName}</title>
     <style>
-        :root { --primary-color: ${systemConfig.themeColor}; --bg-light: #f4f6f8; --dark-blue: #2c3e50; }
-        body { font-family: 'Segoe UI', sans-serif; background-color: var(--bg-light); margin: 0; padding-bottom: 80px; }
+        :root { --primary-color: ${systemConfig.themeColor}; }
+        body { font-family: 'Segoe UI', sans-serif; background: #f4f6f8; margin: 0; }
         .header { height: 180px; background: linear-gradient(rgba(0,0,0,0.4), rgba(0,0,0,0.4)), url('${systemConfig.bgImage}'); background-size: cover; display: flex; justify-content: center; align-items: center; color: white; }
-        .meal-card { background: #fff; border-radius: 15px; margin-bottom: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); text-align: center; padding-bottom: 15px; }
-        .meal-img { width: 100%; height: 200px; object-fit: cover; }
-        .meal-name { font-size: 19px; font-weight: bold; color: var(--dark-blue); margin: 10px; }
-        .meal-price { font-size: 18px; font-weight: bold; color: var(--primary-color); }
-        .qty-btn { background: var(--primary-color); color: white; border: none; width: 36px; height: 36px; border-radius: 50%; cursor: pointer; }
+        .meal-card { background: white; border-radius: 15px; margin: 15px; padding: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); text-align: center; }
+        .meal-img { width: 100%; height: 150px; object-fit: cover; border-radius: 10px; }
     </style>
 </head>
 <body>
     <div class="header"><h1>${systemConfig.restaurantName}</h1></div>
-    <div id="menuItemsContainer" style="padding:15px;"></div>
-    
+    <div id="menu"></div>
     <script>
-        const mealsData = ${JSON.stringify(mealsData)};
-        const maxTables = ${systemConfig.availableTables};
-        // باقي كود الفرونت إيند كما هو (تم اختصاره هنا للتوضيح)..
-        console.log("المنيو جاهز ويعمل ببيانات السيرفر المركزي");
+        const meals = ${JSON.stringify(mealsData)};
+        document.getElementById('menu').innerHTML = meals.map(m => '<div class="meal-card"><img src="'+m.img+'" class="meal-img"><h3>'+m.name+'</h3><p>'+m.price+' دينار</p></div>').join('');
     </script>
 </body>
 </html>
     `);
 });
 
-app.listen(port, () => console.log(`Client Server running on port ${port}`));
+app.listen(port, () => console.log('Client Server Running'));
