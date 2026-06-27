@@ -7,7 +7,7 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// الإعدادات المركزية الافتراضية وثبات الهوية الملكية الخضراء
+// الإعدادات المركزية الافتراضية
 let systemConfig = {
     restaurantName: "مطاعم أبو يونس",
     bgImage: "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=800&q=80",
@@ -16,10 +16,12 @@ let systemConfig = {
 };
 
 let categories = ["الكل", "شاورما", "بروستد", "مشروبات"];
+
+// أضفنا خاصية available: true لكل وجبة بشكل افتراضي
 let mealsData = [
-    { id: 1, name: "شاورما دجاج", price: 3.50, category: "شاورما", description: "شاورما على الفحم مع الثومية والبطاطس المقرمشة", img: "https://images.unsplash.com/photo-1649144368140-5e3692beeb51?w=200" },
-    { id: 2, name: "بروستد كامل", price: 6.00, category: "بروستد", description: "4 قطع دجاج بروستد مقرمش مع البطاطا، الثومية، والخبز", img: "https://images.unsplash.com/photo-1626082927389-6cd097cdc6ec?w=200" },
-    { id: 3, name: "بيبسي", price: 0.50, category: "مشروبات", description: "عبوة باردة ومنعشة", img: "https://images.unsplash.com/photo-1554866585-cd94860890b7?w=200" }
+    { id: 1, name: "شاورما دجاج", price: 3.50, category: "شاورما", description: "شاورما على الفحم مع الثومية والبطاطس المقرمشة", img: "https://images.unsplash.com/photo-1649144368140-5e3692beeb51?w=200", available: true },
+    { id: 2, name: "بروستد كامل", price: 6.00, category: "بروستد", description: "4 قطع دجاج بروستد مقرمش مع البطاطا، الثومية، والخبز", img: "https://images.unsplash.com/photo-1626082927389-6cd097cdc6ec?w=200", available: true },
+    { id: 3, name: "بيبسي", price: 0.50, category: "مشروبات", description: "عبوة باردة ومنعشة", img: "https://images.unsplash.com/photo-1554866585-cd94860890b7?w=200", available: true }
 ];
 
 let hasOrder = false;
@@ -35,19 +37,31 @@ app.get('/update', (req, res) => {
     }
 });
 
-// APIs التحكم عن بعد
+// APIs التحكم والبيانات
 app.get('/api/get-system', (req, res) => {
     res.json({ systemConfig, categories, mealsData, ordersList });
 });
 
 app.post('/api/update-config', (req, res) => {
     systemConfig = req.body;
-    res.json({ success: true });
+    res.json({ success: true, systemConfig });
 });
 
 app.post('/api/update-meals', (req, res) => {
     mealsData = req.body.mealsData;
-    res.json({ success: true });
+    res.json({ success: true, mealsData });
+});
+
+// API جديد خاص بتغيير حالة توفر الوجبة بسرعة من لوحة التحكم
+app.post('/api/toggle-meal-status', (req, res) => {
+    const { mealId, available } = req.body;
+    const meal = mealsData.find(m => m.id === parseInt(mealId));
+    if (meal) {
+        meal.available = available;
+        res.json({ success: true, mealsData });
+    } else {
+        res.status(404).json({ success: false, message: "الوجبة غير موجودة" });
+    }
 });
 
 app.post('/api/submit-order', (req, res) => {
@@ -62,7 +76,7 @@ app.post('/api/submit-order', (req, res) => {
     res.json({ success: true });
 });
 
-// صفحة الزبائن الرئيسية - معزولة كلياً ومحمية من أخطاء الـ Syntax
+// صفحة الزبائن الرئيسية - تعرض فقط الوجبات المتاحة (available === true)
 app.get('/', (req, res) => {
     const htmlPage = `
 <!DOCTYPE html>
@@ -147,7 +161,8 @@ app.get('/', (req, res) => {
 
 <script>
     const maxTables = ${systemConfig.availableTables};
-    const mealsData = ${JSON.stringify(mealsData)};
+    // فلترة الوجبات لعرض المتاحة فقط للزبائن
+    const mealsData = ${JSON.stringify(mealsData)}.filter(m => m.available !== false);
     let cart = {}; 
     let currentCategory = 'الكل';
     
@@ -169,6 +184,12 @@ app.get('/', (req, res) => {
     function renderMenu() {
         const container = document.getElementById('menuItemsContainer');
         const filtered = currentCategory === 'الكل' ? mealsData : mealsData.filter(m => m.category === currentCategory);
+        
+        if(filtered.length === 0) {
+            container.innerHTML = '<div style="text-align:center; padding:30px; color:#999;">لا توجد وجبات متاحة حالياً في هذا القسم.</div>';
+            return;
+        }
+        
         container.innerHTML = filtered.map(m => {
             return '<div class="meal-card">' +
                 '<img src="' + m.img + '" class="meal-img">' +
@@ -194,8 +215,10 @@ app.get('/', (req, res) => {
         let count = 0, total = 0; 
         for(let id in cart) { 
             let m = mealsData.find(x => x.id == id); 
-            count += cart[id]; 
-            total += m.price * cart[id]; 
+            if(m) {
+                count += cart[id]; 
+                total += m.price * cart[id]; 
+            }
         }
         document.getElementById('cartCount').innerText = count; 
         document.getElementById('cartTotal').innerText = total.toFixed(2); 
@@ -208,7 +231,9 @@ app.get('/', (req, res) => {
         list.innerHTML = Object.keys(cart).length === 0 ? "السلة فارغة، أضف بعض الوجبات الشهية أولاً!" : "";
         for(let id in cart) { 
             let m = mealsData.find(x => x.id == id); 
-            list.innerHTML += '<div style="padding:8px 0; border-bottom:1px solid #f9f9f9;">• ' + m.name + ' (x' + cart[id] + ') - ' + (m.price * cart[id]).toFixed(2) + ' دينار</div>'; 
+            if(m) {
+                list.innerHTML += '<div style="padding:8px 0; border-bottom:1px solid #f9f9f9;">• ' + m.name + ' (x' + cart[id] + ') - ' + (m.price * cart[id]).toFixed(2) + ' دينار</div>'; 
+            }
         }
     }
     
@@ -220,7 +245,10 @@ app.get('/', (req, res) => {
         if(Object.keys(cart).length === 0) return;
         const chosenTable = document.getElementById('tableNumberSelect').value;
         const notes = document.getElementById('orderNotes').value;
-        let itemsSummary = Object.keys(cart).map(id => mealsData.find(x => x.id == id).name + " (" + cart[id] + ")").join(', ');
+        let itemsSummary = Object.keys(cart).map(id => {
+            let m = mealsData.find(x => x.id == id);
+            return m ? m.name + " (" + cart[id] + ")" : "";
+        }).filter(Boolean).join(', ');
         
         fetch('/api/submit-order', {
             method: 'POST', 
@@ -254,4 +282,4 @@ app.get('/', (req, res) => {
     res.send(htmlPage);
 });
 
-app.listen(port, () => console.log(`Client Server running securely on port ${port}`));
+app.listen(port, () => console.log(`Server with toggling features running on port ${port}`));
